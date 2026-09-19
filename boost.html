@@ -129,11 +129,21 @@
           <label for="lien">Lien du compte / de la vidéo</label>
           <input id="lien" type="url" placeholder="https://…" inputmode="url">
         </div>
+        <div id="paySection" style="display:none">
+          <div class="field">
+            <label for="phone">Numéro Mobile Money (MTN / Orange)</label>
+            <input id="phone" type="tel" placeholder="2376XXXXXXXX" inputmode="numeric">
+          </div>
+        </div>
         <div class="total"><span>Total estimé</span><b id="total">500 FCFA</b></div>
         <a class="btn btn-wa btn-lg" id="orderBtn" data-wa href="#" rel="noopener" style="width:100%">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.96L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Z"/></svg>
           Commander sur WhatsApp
         </a>
+        <button class="btn btn-lg" id="payBtn" style="display:none;width:100%;margin-top:.6rem;background:linear-gradient(135deg,#e9b44c,#b47f1a);color:#14090a">
+          💳 Payer par Mobile Money
+        </button>
+        <div id="payResult" style="display:none;margin-top:1rem;font-size:.92rem;line-height:1.6"></div>
         <p class="muted" style="margin-top:.8rem;font-size:.85rem">Votre récapitulatif de commande part directement dans WhatsApp : vous confirmez, on lance le boost.</p>
       </div>
 
@@ -237,6 +247,54 @@ const CONFIG = {
       el.setAttribute("href", wa); el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener");
     });
     refresh(doc);
+    initPay(doc);
+  }
+
+  /* ==== Paiement Mobile Money via le serveur agent (Campay → exobooster) ==== */
+  var BACKEND_URL = ""; // ← colle ici l'URL du serveur agent (ex. https://la-sorciere-api.onrender.com)
+  window.__BACKEND_URL__ = BACKEND_URL;
+
+  function initPay(doc) {
+    if (!BACKEND_URL) { return; } // pas de serveur configuré : on reste en commande WhatsApp
+    doc.getElementById("paySection").style.display = "";
+    var btn = doc.getElementById("payBtn");
+    btn.style.display = "";
+    var out = doc.getElementById("payResult");
+    btn.addEventListener("click", function () {
+      var f = readForm(doc);
+      var phone = doc.getElementById("phone").value.replace(/[\s+]/g, "");
+      out.style.display = "";
+      btn.disabled = true;
+      out.textContent = "Envoi de la demande de paiement…";
+      fetch(BACKEND_URL + "/api/order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service: f.service, qty: f.qte, link: f.lien, phone: phone })
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (r) {
+          if (!r.ok) { out.innerHTML = "⚠️ " + (r.j.error || "erreur"); btn.disabled = false; return; }
+          var pay = r.j.payment || {};
+          var msg = "Commande <b>" + r.j.ref + "</b> — " + r.j.clientPriceText + "<br>";
+          if (pay.ussd_string) { msg += "Compose <b>" + pay.ussd_string + "</b> sur ton téléphone et valide."; }
+          else if (pay.redirect_url) { msg += '<a href="' + pay.redirect_url + '" target="_blank" rel="noopener">Ouvre la page de paiement</a>.'; }
+          else { msg += "Valide le paiement sur ton téléphone."; }
+          msg += "<br><span class='muted'>Suivi automatique du paiement…</span>";
+          out.innerHTML = msg;
+          pollStatus(ref = r.j.ref, out, btn);
+        })
+        .catch(function () { out.innerHTML = "⚠️ Serveur injoignable — passe par le bouton WhatsApp ci-dessus."; btn.disabled = false; });
+    });
+  }
+
+  function pollStatus(ref, out, btn) {
+    var tries = 0;
+    var t = setInterval(function () {
+      tries++;
+      fetch(BACKEND_URL + "/api/status/" + ref).then(function (r) { return r.json(); }).then(function (o) {
+        if (o.status === "boosting") { clearInterval(t); out.innerHTML = "✅ Paiement reçu ! Le boost est lancé (réf. " + ref + "). Suivi sur WhatsApp."; btn.disabled = false; }
+        else if (/failed|error/.test(o.status || "")) { clearInterval(t); out.innerHTML = "⚠️ Statut : " + o.status + " — écris-nous sur WhatsApp avec la réf. " + ref + "."; btn.disabled = false; }
+        else if (tries > 60) { clearInterval(t); btn.disabled = false; }
+      }).catch(function () {});
+    }, 5000);
   }
 
   window.__BOOST__ = { CONFIG: CONFIG, computeTotal: computeTotal, buildMessage: buildMessage, waURL: waURL, refresh: refresh, init: init };
