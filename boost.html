@@ -144,7 +144,7 @@
           💳 Payer par Mobile Money
         </button>
         <div id="payResult" style="display:none;margin-top:1rem;font-size:.92rem;line-height:1.6"></div>
-        <p class="muted" style="margin-top:.8rem;font-size:.85rem">Votre récapitulatif de commande part directement dans WhatsApp : vous confirmez, on lance le boost.</p>
+        <p class="muted" id="waNote" style="margin-top:.8rem;font-size:.85rem">Votre récapitulatif de commande part directement dans WhatsApp : vous confirmez, on lance le boost.</p>
       </div>
 
       <!-- ============ TARIFS ============ -->
@@ -257,6 +257,8 @@ const CONFIG = {
   function initPay(doc) {
     if (!BACKEND_URL) { return; } // pas de serveur configuré : on reste en commande WhatsApp
     doc.getElementById("paySection").style.display = "";
+    doc.getElementById("orderBtn").style.display = "none"; // paiement d'abord : plus d'envoi direct sur WhatsApp
+    doc.getElementById("waNote").textContent = "Paiement d'abord : dès que l'argent est encaissé, la commande est exécutée et transmise sur WhatsApp.";
     var btn = doc.getElementById("payBtn");
     btn.style.display = "";
     var out = doc.getElementById("payResult");
@@ -279,19 +281,31 @@ const CONFIG = {
           else { msg += "Valide le paiement sur ton téléphone."; }
           msg += "<br><span class='muted'>Suivi automatique du paiement…</span>";
           out.innerHTML = msg;
-          pollStatus(ref = r.j.ref, out, btn);
+          pollStatus(r.j.ref, out, btn, f);
         })
         .catch(function () { out.innerHTML = "⚠️ Serveur injoignable — passe par le bouton WhatsApp ci-dessus."; btn.disabled = false; });
     });
   }
 
-  function pollStatus(ref, out, btn) {
+  function pollStatus(ref, out, btn, f) {
     var tries = 0;
     var t = setInterval(function () {
       tries++;
       fetch(BACKEND_URL + "/api/status/" + ref).then(function (r) { return r.json(); }).then(function (o) {
-        if (o.status === "boosting") { clearInterval(t); out.innerHTML = "✅ Paiement reçu ! Le boost est lancé (réf. " + ref + "). Suivi sur WhatsApp."; btn.disabled = false; }
-        else if (/failed|error/.test(o.status || "")) { clearInterval(t); out.innerHTML = "⚠️ Statut : " + o.status + " — écris-nous sur WhatsApp avec la réf. " + ref + "."; btn.disabled = false; }
+        if (/^(boosting|paid)/.test(o.status || "")) {
+          // Argent encaissé : on peut maintenant transmettre la commande sur WhatsApp
+          clearInterval(t);
+          var total = document.getElementById("total").textContent;
+          var receipt = "Bonjour La Sorcière ✦ — Commande PAYÉE\nRéf : " + ref
+            + "\nPlateforme : " + f.plateforme
+            + "\nService : " + (f.service === "tt" ? "TikTok monétisé" : "Abonnés x" + f.qte)
+            + "\nLien : " + f.lien
+            + "\nTotal payé : " + total;
+          out.innerHTML = "✅ Paiement reçu ! La commande est en cours d'exécution.<br>"
+            + "<a class=\"btn btn-wa\" style=\"margin-top:.6rem\" target=\"_blank\" rel=\"noopener\" href=\"https://wa.me/237673385748?text=" + encodeURIComponent(receipt) + "\">Envoyer le reçu sur WhatsApp</a>";
+          btn.disabled = false;
+        }
+        else if (/failed|error/.test(o.status || "")) { clearInterval(t); out.innerHTML = "⚠️ Paiement non abouti (" + o.status + ") — aucun débit validé. Réessaie ou écris-nous sur WhatsApp."; btn.disabled = false; }
         else if (tries > 60) { clearInterval(t); btn.disabled = false; }
       }).catch(function () {});
     }, 5000);
