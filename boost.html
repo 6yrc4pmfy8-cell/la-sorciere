@@ -126,7 +126,7 @@
           <input id="qte" type="number" min="100" max="100000" step="100" value="100">
         </div>
         <div class="field">
-          <label for="lien">Lien du compte / de la vidéo</label>
+          <label for="lien">Lien du compte / de la vidéo (obligatoire)</label>
           <input id="lien" type="url" placeholder="https://…" inputmode="url">
         </div>
         <div id="paySection" style="display:none">
@@ -217,9 +217,11 @@ const CONFIG = {
       + "Plateforme : " + f.plateforme + "\n"
       + "Service : " + svc + "\n"
       + (f.service === "tt" ? "" : "Quantité : " + f.qte + "\n")
-      + "Lien : " + (f.lien || "(à préciser)") + "\n"
+      + "Lien : " + f.lien + "\n"
       + "Total estimé : " + fmt(total) + " FCFA";
   }
+
+  function validLink(v) { return /^https?:\/\/.+/.test(v || ""); }
 
   function waURL(msg) {
     return "https://wa.me/" + CONFIG.whatsappNumber + "?text=" + encodeURIComponent(msg);
@@ -231,7 +233,10 @@ const CONFIG = {
     doc.getElementById("qtyField").style.display = isTT ? "none" : "";
     var total = computeTotal(f.service, f.qte);
     doc.getElementById("total").textContent = fmt(total) + " FCFA";
-    doc.getElementById("orderBtn").setAttribute("href", waURL(buildMessage(f, total)));
+    // Lien obligatoire : pas de lien valide → pas d'envoi de commande
+    var btn = doc.getElementById("orderBtn");
+    if (validLink(f.lien)) { btn.setAttribute("href", waURL(buildMessage(f, total))); }
+    else { btn.setAttribute("href", "#"); }
   }
 
   function init() {
@@ -241,6 +246,13 @@ const CONFIG = {
       ["input", "change"].forEach(function (ev) { el.addEventListener(ev, function () { refresh(doc); }); });
     });
     doc.getElementById("year").textContent = String(new Date().getFullYear());
+    doc.getElementById("orderBtn").addEventListener("click", function (ev) {
+      var f = readForm(doc);
+      if (!validLink(f.lien)) {
+        ev.preventDefault(); // pas de lien valide → pas d'envoi
+        doc.getElementById("waNote").textContent = "⚠️ Ajoute le lien du compte ou de la vidéo (obligatoire) avant d'envoyer la commande.";
+      }
+    });
     var wa = waURL("Bonjour La Sorcière ✦, je viens de votre page Boost.");
     doc.querySelectorAll("[data-wa]").forEach(function (el) {
       if (el.id === "orderBtn") { return; }
@@ -266,6 +278,10 @@ const CONFIG = {
       var f = readForm(doc);
       var phone = doc.getElementById("phone").value.replace(/[\s+]/g, "");
       out.style.display = "";
+      if (!validLink(f.lien)) { // lien obligatoire → pas de paiement lancé
+        out.innerHTML = "⚠️ Renseigne le lien du compte ou de la vidéo (obligatoire) avant de payer.";
+        return;
+      }
       btn.disabled = true;
       out.textContent = "Envoi de la demande de paiement…";
       fetch(BACKEND_URL + "/api/order", {
@@ -311,7 +327,7 @@ const CONFIG = {
     }, 5000);
   }
 
-  window.__BOOST__ = { CONFIG: CONFIG, computeTotal: computeTotal, buildMessage: buildMessage, waURL: waURL, refresh: refresh, init: init };
+  window.__BOOST__ = { CONFIG: CONFIG, computeTotal: computeTotal, buildMessage: buildMessage, validLink: validLink, waURL: waURL, refresh: refresh, init: init };
 
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", init); }
   else { init(); }
