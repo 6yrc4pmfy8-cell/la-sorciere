@@ -21,23 +21,28 @@ const CFG = {
   CAMPAY_USERNAME: process.env.CAMPAY_USERNAME || "",
   CAMPAY_PASSWORD: process.env.CAMPAY_PASSWORD || "",
   CAMPAY_WEBHOOK_SECRET: process.env.CAMPAY_WEBHOOK_SECRET || "",
-  EXO_API_URL: process.env.EXO_API_URL || "https://www.exobooster.site/api/v2",
+  EXO_API_URL: process.env.EXO_API_URL || "https://exosupplier.com/api/v2",
   EXO_API_KEY: process.env.EXO_API_KEY || "",
+  USD_XAF: parseFloat(process.env.USD_XAF || "600"), // taux USD → FCFA pour le prix de gros
 };
 
-/* ---- Catalogue : prix CLIENT (ce que paie le client) + service exobooster (prix de gros) ----
-   exoPer100 / exoFlat = coûts exobooster à renseigner (marge = client - gros). */
+/* ---- Catalogue : prix CLIENT (ce que paie le client) + service exosupplier (prix de gros) ----
+   IDs vérifiés sur https://exosupplier.com/api/v2 le 2026-09-21 (action=services).
+   usdPer100 = prix de gros pour 100 unités ; marge = prix client − gros × taux USD_XAF. */
 const SERVICES = {
   abo: {
     label: "Abonnés",
     clientPer100: 500,                                   // 500 FCFA / 100 abonnés (prix La Sorcière)
-    exoServiceId: process.env.EXO_ABO_SERVICE || "",     // ID du service sur exobooster
-    exoPer100: parseInt(process.env.EXO_ABO_PER100 || "0", 10),
+    exoByPlatform: {
+      TikTok:    { id: process.env.EXO_ABO_TIKTOK    || "3036", usdPer100: 0.35 }, // qualité moyenne
+      Instagram: { id: process.env.EXO_ABO_INSTAGRAM || "3106", usdPer100: 0.20 }, // qualité moyenne
+      Facebook:  { id: process.env.EXO_ABO_FACEBOOK  || "3123", usdPer100: 0.20 }, // page, qualité moyenne
+    },
   },
   tt: {
     label: "TikTok monétisé",
     clientFlat: 5000,                                    // 5 000 FCFA (prix La Sorcière)
-    exoServiceId: process.env.EXO_TT_SERVICE || "",
+    exoServiceId: process.env.EXO_TT_SERVICE || "",      // ⚠️ absent du catalogue exosupplier → exécution manuelle
     exoFlat: parseInt(process.env.EXO_TT_FLAT || "0", 10),
   },
 };
@@ -55,10 +60,12 @@ function clientPrice(service, qty) {
   if (service === "tt") return s.clientFlat;
   return Math.max(1, Math.round(qty / 100)) * s.clientPer100;
 }
-function wholesale(service, qty) {
+function wholesale(service, qty, platform) {
   const s = SERVICES[service];
   if (service === "tt") return s.exoFlat || null;
-  return s.exoPer100 ? Math.max(1, Math.round(qty / 100)) * s.exoPer100 : null;
+  const p = s.exoByPlatform[platform] || s.exoByPlatform.TikTok;
+  const packs = Math.max(1, Math.round((qty || 0) / 100));
+  return Math.round(packs * p.usdPer100 * CFG.USD_XAF);
 }
 
 /* ---------- Campay ---------- */
@@ -97,19 +104,22 @@ function campaySignatureOK(body) {
   return crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
-/* ---------- exobooster (API SMM standard : key + action=add) ---------- */
+/* ---------- exosupplier (API SMM standard : key + action=add) ---------- */
 async function exoAdd(order) {
   const s = SERVICES[order.service];
-  const exoOrder = { service_id: s.exoServiceId, quantity: order.qty, link: order.link, wholesale: order.wholesale };
+  const serviceId = order.service === "abo"
+    ? ((s.exoByPlatform[order.platform] || s.exoByPlatform.TikTok).id)
+    : s.exoServiceId;
+  const exoOrder = { service_id: serviceId, quantity: order.qty, link: order.link, wholesale: order.wholesale };
   if (CFG.MOCK) {
     exoOrder.order_id = "EXO-MOCK-" + Math.floor(Math.random() * 1e6);
     return exoOrder;
   }
-  if (!CFG.EXO_API_KEY || !s.exoServiceId) throw new Error("exobooster non configuré (EXO_API_KEY / service ID)");
-  const body = new URLSearchParams({ key: CFG.EXO_API_KEY, action: "add", service: String(s.exoServiceId), quantity: String(order.qty), link: order.link });
+  if (!CFG.EXO_API_KEY || !serviceId) throw new Error("exosupplier non configuré (EXO_API_KEY / service ID)");
+  const body = new URLSearchParams({ key: CFG.EXO_API_KEY, action: "add", service: String(serviceId), quantity: String(order.qty), link: order.link });
   const res = await fetch(CFG.EXO_API_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   const data = await res.json().catch(() => ({}));
-  if (data.error) throw new Error("exobooster: " + data.error);
+  if (data.error) throw new Error("exosupplier: " + data.error);
   exoOrder.order_id = data.order || null;
   return exoOrder;
 }
@@ -159,11 +169,12 @@ const server = http.createServer(async (req, res) => {
 
       const ref = newRef();
       const price = clientPrice(b.service, qty);
+      const platform = b.service === "abo" ? (SERVICES.abo.exoByPlatform[b.plateforme] ? b.plateforme : "TikTok") : "TikTok";
       orders[ref] = {
-        ref, service: b.service, serviceLabel: SERVICES[b.service].label,
+        ref, service: b.service, serviceLabel: SERVICES[b.service].label, platform,
         qty: b.service === "tt" ? 1 : qty, link, phone,
-        clientPrice: price, wholesale: wholesale(b.service, qty),
-        margin: wholesale(b.service, qty) !== null ? price - wholesale(b.service, qty) : null,
+        clientPrice: price, wholesale: wholesale(b.service, qty, platform),
+        margin: wholesale(b.service, qty, platform) !== null ? price - wholesale(b.service, qty, platform) : null,
         status: "awaiting_payment", created: new Date().toISOString(),
       };
       saveOrders();
