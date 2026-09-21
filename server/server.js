@@ -17,9 +17,8 @@ const CFG = {
   MOCK: process.env.MOCK === "1",
   PORT: parseInt(process.env.PORT || "4567", 10),
   SITE_URL: process.env.SITE_URL || "http://localhost:" + (process.env.PORT || "4567"),
-  CAMPAY_BASE: process.env.CAMPAY_BASE || "https://api.campay.net",
-  CAMPAY_USERNAME: process.env.CAMPAY_USERNAME || "",
-  CAMPAY_PASSWORD: process.env.CAMPAY_PASSWORD || "",
+  CAMPAY_BASE: process.env.CAMPAY_BASE || "https://campay.net", // test : https://demo.campay.net
+  CAMPAY_TOKEN: process.env.CAMPAY_TOKEN || "",                  // jeton permanent (APP KEYS)
   CAMPAY_WEBHOOK_SECRET: process.env.CAMPAY_WEBHOOK_SECRET || "",
   EXO_API_URL: process.env.EXO_API_URL || "https://exosupplier.com/api/v2",
   EXO_API_KEY: process.env.EXO_API_KEY || "",
@@ -71,11 +70,11 @@ function wholesale(service, qty, platform) {
 /* ---------- Campay ---------- */
 async function campayCollect(order) {
   if (CFG.MOCK) return { reference: "MOCK-" + order.ref, ussd_string: "*126*3*1*237XXXXXXX#", mock: true };
-  const res = await fetch(CFG.CAMPAY_BASE + "/collect/", {
+  const res = await fetch(CFG.CAMPAY_BASE + "/api/collect/", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: "Token " + CFG.CAMPAY_USERNAME + ":" + CFG.CAMPAY_PASSWORD,
+      Authorization: "Token " + CFG.CAMPAY_TOKEN,
     },
     body: JSON.stringify({
       amount: order.clientPrice,
@@ -87,7 +86,7 @@ async function campayCollect(order) {
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error("Campay: " + (data.detail || res.status));
+  if (!res.ok || data.error_code) throw new Error("Campay " + (data.error_code || res.status) + ": " + (data.message || data.detail || ""));
   return data; // {reference, status, ussd_string?, redirect_url?}
 }
 
@@ -147,7 +146,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return send(res, 200, { ok: true, mock: CFG.MOCK, campay: !!(CFG.CAMPAY_USERNAME && CFG.CAMPAY_PASSWORD), exo: !!CFG.EXO_API_KEY });
+      return send(res, 200, { ok: true, mock: CFG.MOCK, campay: !!CFG.CAMPAY_TOKEN, exo: !!CFG.EXO_API_KEY });
     }
 
     if (req.method === "POST" && url.pathname === "/api/quote") {
