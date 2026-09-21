@@ -268,7 +268,7 @@ const CONFIG = {
       out.textContent = "Envoi de la demande de paiement…";
       fetch(BACKEND_URL + "/api/order", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: f.service, qty: f.qte, link: f.lien, phone: phone })
+        body: JSON.stringify({ service: f.service, qty: f.qte, link: f.lien, phone: phone, plateforme: f.plateforme })
       }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (r) {
           if (!r.ok) { out.innerHTML = "⚠️ " + (r.j.error || "erreur"); btn.disabled = false; return; }
