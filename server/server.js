@@ -90,17 +90,17 @@ async function campayCollect(order) {
   return data; // {reference, status, ussd_string?, redirect_url?}
 }
 
-/* Signature webhook Campay : HMAC-SHA256 du secret sur la concaténation des valeurs triées par clé */
+/* Signature webhook Campay : JWT (HS256) signé avec le Webhook Secret
+   — méthode identique à ValidateCallback du SDK officiel campay-go-sdk. */
 function campaySignatureOK(body) {
   if (!CFG.CAMPAY_WEBHOOK_SECRET) return true; // non configuré : on accepte (mode dev)
-  const sig = body.signature || "";
-  const concat = Object.keys(body).filter((k) => k !== "signature").sort()
-    .map((k) => (body[k] === null || body[k] === undefined ? "" : String(body[k]))).join("");
-  const expected = crypto.createHmac("sha256", CFG.CAMPAY_WEBHOOK_SECRET).update(concat).digest("hex");
-  const sigBuf = Buffer.from(String(sig));
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length) return false;
-  return crypto.timingSafeEqual(sigBuf, expBuf);
+  const parts = String(body.signature || "").split(".");
+  if (parts.length !== 3) return false;
+  const expected = crypto.createHmac("sha256", CFG.CAMPAY_WEBHOOK_SECRET)
+    .update(parts[0] + "." + parts[1]).digest();
+  const given = Buffer.from(parts[2].replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  if (given.length !== expected.length) return false;
+  return crypto.timingSafeEqual(given, expected);
 }
 
 /* ---------- exosupplier (API SMM standard : key + action=add) ---------- */
