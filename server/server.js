@@ -23,6 +23,9 @@ const CFG = {
   EXO_API_URL: process.env.EXO_API_URL || "https://exosupplier.com/api/v2",
   EXO_API_KEY: process.env.EXO_API_KEY || "",
   USD_XAF: parseFloat(process.env.USD_XAF || "600"), // taux USD → FCFA pour le prix de gros
+  NOTIFY_PHONE: process.env.NOTIFY_PHONE || "",          // ton numéro WhatsApp (237…)
+  CALLMEBOT_APIKEY: process.env.CALLMEBOT_APIKEY || "",  // clé gratuite callmebot.com
+  CALLMEBOT_BASE: process.env.CALLMEBOT_BASE || "https://api.callmebot.com/whatsapp.php",
 };
 
 /* ---- Catalogue : prix CLIENT (ce que paie le client) + service exosupplier (prix de gros) ----
@@ -123,6 +126,21 @@ async function exoAdd(order) {
   return exoOrder;
 }
 
+/* Notification WhatsApp automatique (CallMeBot, gratuit) — uniquement APRÈS paiement encaissé */
+function notifyWhatsApp(order) {
+  if (CFG.MOCK || !CFG.CALLMEBOT_APIKEY || !CFG.NOTIFY_PHONE) return Promise.resolve();
+  const msg = "COMMANDE PAYEE " + order.ref
+    + "\n" + order.serviceLabel + (order.service === "abo" ? " x" + order.qty : "")
+    + " (" + order.platform + ")"
+    + "\nLien: " + order.link
+    + "\nMontant client: " + fmt(order.clientPrice) + " FCFA"
+    + (order.margin != null ? "\nMarge: " + fmt(order.margin) + " FCFA" : "")
+    + "\nStatut: " + order.status;
+  const u = CFG.CALLMEBOT_BASE + "?phone=" + encodeURIComponent(CFG.NOTIFY_PHONE)
+    + "&text=" + encodeURIComponent(msg) + "&apikey=" + encodeURIComponent(CFG.CALLMEBOT_APIKEY);
+  return fetch(u).then(() => {}).catch(() => {});
+}
+
 /* ---------- HTTP ---------- */
 function send(res, code, obj) {
   const payload = JSON.stringify(obj);
@@ -205,6 +223,7 @@ const server = http.createServer(async (req, res) => {
         order.exoError = String(e.message || e);
       }
       saveOrders();
+      notifyWhatsApp(order); // le client a payé → on prévient ton WhatsApp
       return send(res, 200, { received: true, status: order.status });
     }
 
