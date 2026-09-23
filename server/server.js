@@ -17,7 +17,7 @@ const CFG = {
   MOCK: process.env.MOCK === "1",
   PORT: parseInt(process.env.PORT || "4567", 10),
   SITE_URL: process.env.SITE_URL || "http://localhost:" + (process.env.PORT || "4567"),
-  CAMPAY_BASE: process.env.CAMPAY_BASE || "https://campay.net", // test : https://demo.campay.net
+  CAMPAY_BASE: (process.env.CAMPAY_BASE || "https://campay.net").replace(/\/+$/, ""), // test : https://demo.campay.net
   CAMPAY_TOKEN: process.env.CAMPAY_TOKEN || "",                  // jeton permanent (APP KEYS)
   CAMPAY_WEBHOOK_SECRET: process.env.CAMPAY_WEBHOOK_SECRET || "",
   EXO_API_URL: process.env.EXO_API_URL || "https://exosupplier.com/api/v2",
