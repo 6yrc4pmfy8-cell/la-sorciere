@@ -50,14 +50,10 @@
       </div>
 
       <!-- Nombre d'abonnés -->
-      <label style="display:block;font-family:var(--font-display);font-size:.9rem;color:var(--gold);margin-bottom:.6rem">Nombre d'abonnés</label>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.7rem;margin-bottom:1.5rem" id="counts">
-        <label class="opt"><input type="radio" name="count" value="100" checked> 100</label>
-        <label class="opt"><input type="radio" name="count" value="200"> 200</label>
-        <label class="opt"><input type="radio" name="count" value="500"> 500</label>
-        <label class="opt"><input type="radio" name="count" value="1000"> 1 000</label>
-        <label class="opt"><input type="radio" name="count" value="2000"> 2 000</label>
-        <label class="opt"><input type="radio" name="count" value="5000"> 5 000</label>
+      <label style="display:block;font-family:var(--font-display);font-size:.9rem;color:var(--gold);margin-bottom:.6rem">Nombre d'abonnés souhaité</label>
+      <div style="margin-bottom:1.5rem">
+        <input id="countInput" type="number" min="10" max="100000" step="10" value="100" style="width:100%;padding:.8rem 1rem;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--text);font-family:var(--font-body);font-size:1rem;font-weight:700">
+        <p class="muted" style="margin-top:.5rem;font-size:.8rem">Entrez le nombre exact d'abonnés souhaités (minimum 10).</p>
       </div>
 
       <!-- Tarif -->
@@ -137,7 +133,7 @@
 
   function calcPrice() {
     var platform = document.querySelector('input[name="platform"]:checked').value;
-    var count = parseInt(document.querySelector('input[name="count"]:checked').value);
+    var count = parseInt(document.getElementById('countInput').value) || 100;
     var total = count * PRICE_PER_100 / 100;
     var totalEl = document.getElementById('total');
     totalEl.textContent = total.toLocaleString('fr-FR') + ' FCFA';
@@ -152,9 +148,10 @@
   }
 
   // Événements
-  document.querySelectorAll('input[name="platform"], input[name="count"]').forEach(function(el) {
+  document.querySelectorAll('input[name="platform"]').forEach(function(el) {
     el.addEventListener('change', calcPrice);
   });
+  document.getElementById('countInput').addEventListener('input', calcPrice);
   document.getElementById('lien').addEventListener('input', calcPrice);
 
   // Init
